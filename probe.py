@@ -3,11 +3,14 @@ import cv2
 import os
 import winsound
 
-root_dir = "C:\\Users\\sht3ch\\Documents\\viola\\data_three_arrow_stages\\cascade.xml"
+root_dir = "C:\\Users\\sht3ch\\Documents\\viola\\data\\cascade.xml"
 
 face_cascade = cv2.CascadeClassifier(root_dir)
 
-cap = cv2.VideoCapture(0)
+
+
+cap = cv2.VideoCapture(1)
+
 
 while (True):
     # Capture frame-by-frame
