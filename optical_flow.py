@@ -58,7 +58,7 @@ while True:
 
     cv2.imshow('frame2', frame2)
 
-    k = cv2.waitKey(30) & 0xff
+    k = cv2.waitKey(1) & 0xff
     if k == 27:
         break
     previous_frame = current_frame

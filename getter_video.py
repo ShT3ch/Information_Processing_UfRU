@@ -1,83 +1,37 @@
 import numpy as np
 import cv2
-import math
+
 import logging
 import os
+
+from trainset_builder_modules.ROI_holder import RoiHolder
+from trainset_builder_modules.sample_writers import NegativeExampleRememberer, PositiveExampleRememberer
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-root = 'c:\\Users\\sht3ch\\Documents\\viola\\'
+lk_params = dict(winSize=(15, 15),
+                 maxLevel=2,
+                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-relative_pos = 'pos'
-path_pos = os.path.join(root, relative_pos)
-relative_neg = 'neg'
-path_neg = os.path.join(root, relative_neg)
-path_annotations = os.path.join(root, 'annos_shtech.ls')
-path_bg = os.path.join(root, 'bg_shtech.ls')
+feature_params = dict(maxCorners=100,
+                      qualityLevel=0.3,
+                      minDistance=7,
+                      blockSize=7)
 
 cv2.namedWindow('frame')
 
-
-class CornerHolder(object):
-    def __init__(self):
-        self.center = np.array((0, 0))
-        self.vectors = np.array([0, 0])
-        self.length = np.array([0, 0])
-        self.modifier = float(1)
-
-        self.corners = np.array([[0, 0], [0, 0]])
-
-        self.current_corner = 0
-
-    def start_corners(self):
-        logger.info('start collecting corners')
-        self.current_corner = 0
-        self.corners = np.array([[0, 0], [0, 0]])
-        logger.info('corners: %s', ', '.join(map(str, self.corners)))
-
-    def init_corners(self, coord):
-        self.corners[self.current_corner] = coord
-        logger.info('corner[%i] %s collected', self.current_corner, coord)
-        self.current_corner += 1
-
-        if self.current_corner > 1:
-            return False
-
-        return True
-
-    def init_vectors(self):
-        logger.info('corners: %s', ', '.join(map(str, self.corners)))
-        self.center = self.corners.mean(0)
-        logger.info('center: %s', self.center)
-        self.vectors = self.corners[0, :] - self.center
-        logger.info('result vectors: %s', ', '.join(map(str, self.vectors)))
-        self.length = np.linalg.norm(self.vectors)
-        logger.info('lengths: %s', self.length)
-        self.vectors = np.divide(self.vectors, self.length)
-        logger.info('normalized vectors: %s', ', '.join(map(str, self.vectors)))
-
-    def get_coordinates(self):
-        yield self.center - self.vectors * self.length * self.modifier
-        yield self.center
-        yield self.center + self.vectors * self.length * self.modifier
-
-
-corners = CornerHolder()
-
-corners.start_corners()
-corners.init_corners(np.array((400, 400)))
-corners.init_corners(np.array((0, 0)))
-corners.init_vectors()
+corners = RoiHolder()
+root = 'c:\\Users\\sht3ch\\Documents\\viola\\'
+neg_ex_rememberer = NegativeExampleRememberer(os.path.join(root, 'neg'), os.path.join(root, 'bg.txt'))
+pos_ex_rememberer = PositiveExampleRememberer(os.path.join(root, 'pos'), os.path.join(root, 'annotations.ls'))
 
 global button_pressed
 global corners_setting
 global space_pressed
-global frame_counter
 button_pressed = False
 corners_setting = False
 space_pressed = False
-frame_counter = 0
 
 
 def mouse_click(event, x, y, flags, param):
@@ -104,84 +58,32 @@ def mouse_click(event, x, y, flags, param):
         corners.modifier += float(flags) / (float(1258291200))
 
 
-def remember_pos(img, corners):
-    """
+def generate_mask(img, corner_holder):
+    img2gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    ret, mask = cv2.threshold(img2gray, 10, 255, cv2.THRESH_BINARY)
+    ans = np.zeros_like(mask)
 
-    :type corners: CornerHolder
-    """
-    global frame_counter
-
-    left_bottom_corner, _, right_upped_corner = corners.get_coordinates()
+    left_bottom_corner, _, right_upped_corner = corner_holder.get_coordinates()
     left_bottom_corner = tuple(map(int, left_bottom_corner))
     right_upped_corner = tuple(map(int, right_upped_corner))
 
-    height, width, channels = img.shape
+    height, width = ans.shape
 
-    cropped = img[  max(0, right_upped_corner[1]):min(height, left_bottom_corner[1]),
-                    max(0, right_upped_corner[0]):min(width, left_bottom_corner[0])]
-    cv2.imshow('cropped', cropped)
+    ans[max(0, right_upped_corner[1]):min(height, left_bottom_corner[1]),
+    max(0, right_upped_corner[0]):min(width, left_bottom_corner[0])] = 255
 
-    filename = 'pos_%i.jpg' % frame_counter
-    cv2.imwrite(os.path.join(path_pos, filename), cropped)
-    frame_counter += 1
-
-    filename = os.path.join(relative_pos, filename)
-    filemode = 'w'
-    if os.path.isfile(path_annotations):
-        filemode = 'a'
-
-    logger.info('remembering positive')
-
-    height, width, channels = cropped.shape
-
-    logger.info('left up: [%s]', ' %i %i' % (right_upped_corner[0], right_upped_corner[1]))
-    logger.info('right down: [%s]', ' %i %i' % (left_bottom_corner[0], left_bottom_corner[1]))
-
-    with open(path_annotations, filemode) as annotations_file:
-        annotations_file.write(filename)
-        annotations_file.write(' 1')
-        annotations_file.write(' 0 0')
-        annotations_file.write(' %i %i' % (width, height))
-        annotations_file.write('\n')
-
-
-def remember_neg(img):
-    global frame_counter
-
-    filename = 'neg_%i.jpg' % frame_counter
-    cv2.imwrite(os.path.join(path_neg, filename), img)
-    frame_counter += 1
-
-    filemode = 'w'
-    if os.path.isfile(path_bg):
-        filemode = 'a'
-
-    logger.info('remembering background...')
-
-    with open(path_bg, filemode) as bg_file:
-        bg_file.write(filename)
-        bg_file.write('\n')
+    return ans, img2gray
 
 
 cv2.namedWindow('frame')
 cv2.setMouseCallback('frame', mouse_click)
 
 
-def with_frame(img, corner_holder):
-    left_bottom_corner, rect_center, right_upped_corner = corner_holder.get_coordinates()
-    left_bottom_corner = tuple(map(int, left_bottom_corner))
-    right_upped_corner = tuple(map(int, right_upped_corner))
-    rect_center = tuple(map(int, rect_center))
-    img = cv2.rectangle(img, left_bottom_corner, right_upped_corner, (100, 200, 0, 0), 4)
-    img = cv2.circle(img, rect_center, 5, (0, 0, 255), -1)
-
-    img = cv2.circle(img, right_upped_corner, 5, (255, 0, 0), -1)
-    img = cv2.circle(img, left_bottom_corner, 5, (255, 255, 0), -1)
-
-    return img
-
 
 cap = cv2.VideoCapture(0)
+ret, frame = cap.read()
+
+previous_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
 while (True):
     global space_pressed
@@ -192,20 +94,45 @@ while (True):
     # Our operations on the frame come here
 
     if button_pressed:
-        remember_pos(frame, corners)
+        pos_ex_rememberer.remember_pos(frame, corners)
         # remember_neg(frame)
 
-    frame = with_frame(frame, corners)
+    roi_mask, current_gray_frame = generate_mask(frame, corners)
+
+    cv2.imshow('mask', roi_mask)
+
+    points_to_track = cv2.goodFeaturesToTrack(current_gray_frame, mask=roi_mask, **feature_params)
+
+    shift_of_detail = corners.center
+
+    if points_to_track is not None:
+        for point in points_to_track:
+            img = cv2.circle(frame, tuple(point[0]), 5, (0, 120, 200), -1)
+
+        shifts, statuses, errors = cv2.calcOpticalFlowPyrLK(previous_frame, current_gray_frame,
+                                                            np.array([point[0] for point in points_to_track]), None,
+                                                            None,
+                                                            **lk_params)
+
+        shift_of_detail = np.mean(shifts, axis=0)
+
+        corners.center = shift_of_detail
+
+        # logger.info('shift of frame: [%s], shape: [%s], src shape: [%s]', shift_of_detail, shift_of_detail.shape,
+        #             shifts.shape)
+
+    with_roi, frame = corners.draw_yourself(frame)
 
     # Display the resulting frame
-    cv2.imshow('frame', frame)
+    cv2.imshow('frame', with_roi)
     key = cv2.waitKey(1)
     if key & 0xFF == ord('q'):
         break
-    elif key & 0xFF == 33:
-        space_pressed = True
-    else:
-        space_pressed = False
+    elif key & 0xFF == ord('p'):
+        logger.info('get tracked image to positive')
+
+    previous_frame = current_gray_frame
+
 
 # When everything done, release the capture
 cap.release()
