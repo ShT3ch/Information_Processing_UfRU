@@ -1,11 +1,11 @@
 import numpy as np
 import cv2
-
 import logging
 import os
-
-from trainset_builder_modules.ROI_holder import RoiHolder
+from trainset_builder_modules.RoiHolder import RoiHolder
 from trainset_builder_modules.sample_writers import NegativeExampleRememberer, PositiveExampleRememberer
+from trainset_builder_modules.RoiMover import MouseRoiMover
+from trainset_builder_modules.MouseDelegate import MouseDelegate
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -19,33 +19,19 @@ feature_params = dict(maxCorners=100,
                       minDistance=7,
                       blockSize=7)
 
-cv2.namedWindow('frame')
-
+mouse_manager = MouseDelegate('frame')
 corners = RoiHolder()
 root = 'c:\\Users\\sht3ch\\Documents\\viola\\'
 neg_ex_rememberer = NegativeExampleRememberer(os.path.join(root, 'neg'), os.path.join(root, 'bg.txt'))
 pos_ex_rememberer = PositiveExampleRememberer(os.path.join(root, 'pos'), os.path.join(root, 'annotations.ls'))
 
-global button_pressed
 global corners_setting
-global space_pressed
-button_pressed = False
 corners_setting = False
-space_pressed = False
 
 
 def mouse_click(event, x, y, flags, param):
-    global button_pressed
     global corners_setting
-    if event == cv2.EVENT_LBUTTONDOWN:
-        button_pressed = True
-        corners.center = np.array([x, y])
-    elif event == cv2.EVENT_LBUTTONUP:
-        button_pressed = False
-    elif event == cv2.EVENT_MOUSEMOVE:
-        if button_pressed:
-            corners.center = np.array([x, y])
-    elif event == cv2.EVENT_RBUTTONDBLCLK:
+    if event == cv2.EVENT_RBUTTONDBLCLK:
         logger.info('double right click. will init corners')
         corners.start_corners()
         corners_setting = True
@@ -54,8 +40,11 @@ def mouse_click(event, x, y, flags, param):
             if not corners.init_corners(np.array([x, y])):
                 corners_setting = False
                 corners.init_vectors()
-    elif event == cv2.EVENT_MOUSEWHEEL:
-        corners.modifier += float(flags) / (float(1258291200))
+
+
+mouse_manager.add_to(cv2.EVENT_RBUTTONDBLCLK, mouse_click)
+mouse_manager.add_to(cv2.EVENT_RBUTTONDOWN, mouse_click)
+mouse_roi_mover = MouseRoiMover(corners, 'frame', mouse_event_manager=mouse_manager)
 
 
 def generate_mask(img, corner_holder):
@@ -75,35 +64,29 @@ def generate_mask(img, corner_holder):
     return ans, img2gray
 
 
-cv2.namedWindow('frame')
-cv2.setMouseCallback('frame', mouse_click)
-
-
-
 cap = cv2.VideoCapture(0)
 ret, frame = cap.read()
 
 previous_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-while (True):
+while True:
     global space_pressed
-    global button_pressed
     # Capture frame-by-frame
     ret, frame = cap.read()
 
     # Our operations on the frame come here
-
-    if button_pressed:
-        pos_ex_rememberer.remember_pos(frame, corners)
-        # remember_neg(frame)
+    #
+    # if mouse_roi_mover.button_pressed:
+    #     pos_ex_rememberer.remember_pos(frame, corners)
+    #     # remember_neg(frame)
 
     roi_mask, current_gray_frame = generate_mask(frame, corners)
 
     cv2.imshow('mask', roi_mask)
 
-    points_to_track = cv2.goodFeaturesToTrack(current_gray_frame, mask=roi_mask, **feature_params)
-
     shift_of_detail = corners.center
+
+    points_to_track = cv2.goodFeaturesToTrack(current_gray_frame, mask=roi_mask, **feature_params)
 
     if points_to_track is not None:
         for point in points_to_track:
@@ -132,7 +115,6 @@ while (True):
         logger.info('get tracked image to positive')
 
     previous_frame = current_gray_frame
-
 
 # When everything done, release the capture
 cap.release()
