@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class RoiHolder(object):
     def __init__(self):
         self.center = np.array((0, 0))
-        self.vectors = np.array([0, 0])
+        self.vector = np.array([0, 0])
         self.length = np.array([0, 0])
         self.modifier = float(1)
 
@@ -32,24 +32,77 @@ class RoiHolder(object):
 
         return True
 
-    def init_vectors(self):
-        logger.info('corners: %s', ', '.join(map(str, self.corners)))
-        self.center = self.corners.mean(0)
-        logger.info('center: %s', self.center)
-        self.vectors = self.corners[0, :] - self.center
-        logger.info('result vectors: %s', ', '.join(map(str, self.vectors)))
-        self.length = np.linalg.norm(self.vectors)
-        logger.info('lengths: %s', self.length)
-        self.vectors = np.divide(self.vectors, self.length)
-        logger.info('normalized vectors: %s', ', '.join(map(str, self.vectors)))
+    def is_corners(self, posible_corners):
+        if posible_corners.shape[0] != 2 and posible_corners.shape[0] != 4:
+            raise RuntimeError(
+                'corners vector should have 2 or 4 vectors! Actually shape is [%s]' % str(posible_corners.shape))
+        return True
 
-    def get_coordinates(self):
-        yield self.center - self.vectors * self.length * self.modifier
+    def is_right_order(self, corners):
+        def get_angle(p0, p1=np.array([0, 0]), p2=None):
+            ''' compute angle (in degrees) for p0p1p2 corner
+            Inputs:
+                p0,p1,p2 - points in the form of [x,y]
+            '''
+            if p2 is None:
+                p2 = p1 + np.array([1, 0])
+            v0 = np.array(p0) - np.array(p1)
+            v1 = np.array(p2) - np.array(p1)
+
+            angle = np.math.atan2(np.linalg.det([v0, v1]), np.dot(v0, v1))
+            return np.degrees(angle)
+
+        center = corners.mean(0)
+        vectors = corners - center
+        logger.debug('vectors in right order testing: \t\t[%s]', ', '.join(map(str, vectors)))
+
+        horizontal_direction = np.array([1, 0])
+
+        angles = [get_angle(vec) for vec in vectors]
+        logger.debug('corresponding angles with [%s]: \t\t[%s]', horizontal_direction, ', '.join(map(str, angles)))
+        logger.debug('corresponding ordered angles with [%s]: \t\t[%s]', horizontal_direction,
+                     ', '.join(map(str, sorted(angles))))
+
+        if angles != sorted(angles):
+            raise RuntimeError('bad order of corners')
+
+        return True
+
+    def init_vectors_from_diagonal_corners(self, corners=None):
+        if corners is None:
+            logger.info('diagonal corners not specified, will use internal')
+            corners = self.corners
+
+        self.is_corners(corners)
+        self.is_right_order(corners * (np.array([[1, 0], [0, -1]])))  #[[1, 0], [0, -1]] for fix strange image coordinates with (x, -y)
+
+        logger.info('corners: %s', ', '.join(map(str, corners)))
+        self.center = corners.mean(0)
+        logger.info('center: %s', self.center)
+        vectors = corners - self.center
+        logger.info('vectors of frame: %s', ', '.join(map(str, vectors)))
+        lengths = np.array([np.linalg.norm(vector) for vector in vectors])
+        logger.info('lengths of frame vectors: %s', lengths)
+
+        longest = lengths.max()
+
+        self.length = longest
+        self.vector = vectors[0] / lengths[0]
+
+        logger.info('normalized vectors: %s', ', '.join(map(str, self.vector)))
+
+    def get_diagonal_coordinates(self):
+        yield self.center - self.vector * self.length * self.modifier
         yield self.center
-        yield self.center + self.vectors * self.length * self.modifier
+        yield self.center + self.vector * self.length * self.modifier
+
+    def get_full_coordinates(self):
+        for i_th in range(4):
+            yield self.center + np.rot90(self.vector, i_th) * self.length
+        yield self.center
 
     def draw_yourself(self, img):
-        left_bottom_corner, rect_center, right_upped_corner = self.get_coordinates()
+        left_bottom_corner, rect_center, right_upped_corner = self.get_diagonal_coordinates()
         left_bottom_corner = tuple(map(int, left_bottom_corner))
         right_upped_corner = tuple(map(int, right_upped_corner))
 

@@ -14,6 +14,7 @@ class MouseDelegate(object):
         cv2.setMouseCallback(self.window_name, self.central_handler)
 
     def central_handler(self, event, x, y, flags, param):
+        logger.debug('mouse event([%s]) on [%s] window', event, self.window_name)
         if event in self.handlers:
             for event_handler in self.handlers[event]:
                 event_handler(event, x, y, flags, param)

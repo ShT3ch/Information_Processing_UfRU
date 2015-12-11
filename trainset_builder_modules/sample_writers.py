@@ -47,7 +47,7 @@ class PositiveExampleRememberer(object):
 
 
     def crop_image(self, img, corners):
-        left_bottom_corner, _, right_upped_corner = corners.get_coordinates()
+        left_bottom_corner, _, right_upped_corner = corners.get_diagonal_coordinates()
         left_bottom_corner = tuple(map(int, left_bottom_corner))
         right_upped_corner = tuple(map(int, right_upped_corner))
 

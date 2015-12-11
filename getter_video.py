@@ -39,7 +39,7 @@ def mouse_click(event, x, y, flags, param):
         if corners_setting:
             if not corners.init_corners(np.array([x, y])):
                 corners_setting = False
-                corners.init_vectors()
+                corners.init_vectors_from_diagonal_corners()
 
 
 mouse_manager.add_to(cv2.EVENT_RBUTTONDBLCLK, mouse_click)
@@ -52,7 +52,7 @@ def generate_mask(img, corner_holder):
     ret, mask = cv2.threshold(img2gray, 10, 255, cv2.THRESH_BINARY)
     ans = np.zeros_like(mask)
 
-    left_bottom_corner, _, right_upped_corner = corner_holder.get_coordinates()
+    left_bottom_corner, _, right_upped_corner = corner_holder.get_diagonal_coordinates()
     left_bottom_corner = tuple(map(int, left_bottom_corner))
     right_upped_corner = tuple(map(int, right_upped_corner))
 
