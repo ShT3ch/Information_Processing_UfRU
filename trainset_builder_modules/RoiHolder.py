@@ -1,8 +1,42 @@
 import numpy as np
 import logging
+import itertools
 import cv2
 
 logger = logging.getLogger(__name__)
+
+
+class target_polygon(object):
+    def __init__(self, points):
+        self.points = points
+
+    def get_roi(self):
+        minimal_X = self.points[:, 0].min()
+        maximal_X = self.points[:, 0].max()
+        minimal_Y = self.points[:, 1].min()
+        maximal_Y = self.points[:, 1].max()
+
+        logger.debug('get roi from polygon. ' +
+                     'minimal_X: [%i]' +
+                     'maximal_X: [%i]' +
+                     'minimal_Y: [%i]' +
+                     'maximal_Y: [%i]',
+                     minimal_X, maximal_X, minimal_Y, maximal_Y)
+
+        return np.array(
+                [(minimal_X, minimal_Y),
+                 (maximal_X, minimal_Y),
+                 (maximal_X, maximal_Y),
+                 (minimal_X, maximal_Y)])
+
+    def draw_yourself(self, img):
+        for point in self.points:
+            img = cv2.circle(img, tuple(point), 5, (40, 150, 50), -1)
+
+        prev_point = self.points[0, :]
+        for point in itertools.chain(self.points[1:, :], [self.points[0, :]]):
+            img = cv2.line(img, tuple(prev_point), tuple(point), (0, 150, 50), 2)
+            prev_point = point
 
 
 class RoiHolder(object):
@@ -10,7 +44,6 @@ class RoiHolder(object):
         self.center = np.array((0, 0))
         self.vector = np.array([0, 0])
         self.length = np.array([0, 0])
-        self.modifier = float(1)
 
         self.corners = np.array([[0, 0], [0, 0]])
 
@@ -35,7 +68,7 @@ class RoiHolder(object):
     def is_corners(self, posible_corners):
         if posible_corners.shape[0] != 2 and posible_corners.shape[0] != 4:
             raise RuntimeError(
-                'corners vector should have 2 or 4 vectors! Actually shape is [%s]' % str(posible_corners.shape))
+                    'corners vector should have 2 or 4 vectors! Actually shape is [%s]' % str(posible_corners.shape))
         return True
 
     def is_right_order(self, corners):
@@ -74,7 +107,9 @@ class RoiHolder(object):
             corners = self.corners
 
         self.is_corners(corners)
-        self.is_right_order(corners * (np.array([[1, 0], [0, -1]])))  #[[1, 0], [0, -1]] for fix strange image coordinates with (x, -y)
+        self.is_right_order(
+                corners * (
+                    np.array([[1, 0], [0, -1]])))  # [[1, 0], [0, -1]] for fix strange image coordinates with (x, -y)
 
         logger.info('corners: %s', ', '.join(map(str, corners)))
         self.center = corners.mean(0)
